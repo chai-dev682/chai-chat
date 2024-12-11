@@ -8,3 +8,5 @@ __pycache__
 
 # Allow
 !fridge_food.jpg
+
+prompt/*
