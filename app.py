@@ -14,7 +14,8 @@ dotenv.load_dotenv()
 
 
 anthropic_models = [
-    "claude-3-5-sonnet-20240620"
+    "claude-3-5-sonnet-20240620",
+    "claude-3-5-sonnet-20241022",
 ]
 
 google_models = [
@@ -135,7 +136,7 @@ def stream_llm_response(model_params, model_type="openai", api_key=None):
     elif model_type == "anthropic":
         client = anthropic.Anthropic(api_key=api_key)
         with client.messages.stream(
-            model=model_params["model"] if "model" in model_params else "claude-3-5-sonnet-20240620",
+            model=model_params["model"] if "model" in model_params else "claude-3-5-sonnet-20241022",
             messages=messages_to_anthropic(st.session_state.messages),
             temperature=model_params["temperature"] if "temperature" in model_params else 0.3,
             max_tokens=4096,
@@ -178,14 +179,14 @@ def main():
 
     # --- Page Config ---
     st.set_page_config(
-        page_title="The OmniChat",
+        page_title="The Chai-Chat",
         page_icon="🤖",
         layout="centered",
         initial_sidebar_state="expanded",
     )
 
     # --- Header ---
-    st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>The OmniChat</i> 💬</h1>""")
+    st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>The Chai-Chat</i> 💬</h1>""")
 
     # --- Side Bar ---
     with st.sidebar:
@@ -209,16 +210,6 @@ def main():
     if (openai_api_key == "" or openai_api_key is None or "sk-" not in openai_api_key) and (google_api_key == "" or google_api_key is None) and (anthropic_api_key == "" or anthropic_api_key is None):
         st.write("#")
         st.warning("⬅️ Please introduce an API Key to continue...")
-
-        with st.sidebar:
-            st.write("#")
-            st.write("#")
-            st.video("https://www.youtube.com/watch?v=7i9j8M_zidA")
-            st.write("📋[Medium Blog: OpenAI GPT-4o](https://medium.com/@enricdomingo/code-the-omnichat-app-integrating-gpt-4o-your-python-chatgpt-d399b90d178e)")
-            st.video("https://www.youtube.com/watch?v=1IQmWVFNQEs")
-            st.write("📋[Medium Blog: Google Gemini](https://medium.com/@enricdomingo/how-i-add-gemini-1-5-pro-api-to-my-app-chat-with-videos-images-and-audios-f42171606143)")
-            st.video("https://www.youtube.com/watch?v=kXIOazjgV-8")
-            st.write("📋[Medium Blog: Anthropic Claude 3.5](https://medium.com/p/7ec4623e2dac)")
 
     else:
         client = OpenAI(api_key=openai_api_key)
@@ -279,7 +270,7 @@ def main():
             st.divider()
 
             # Image Upload
-            if model in ["gpt-4o", "gpt-4-turbo", "gemini-1.5-flash", "gemini-1.5-pro", "claude-3-5-sonnet-20240620"]:
+            if model in ["gpt-4o", "gpt-4-turbo", "gemini-1.5-flash", "gemini-1.5-pro", "claude-3-5-sonnet-20240620", "claude-3-5-sonnet-20241022"]:
                     
                 st.write(f"### **🖼️ Add an image{' or a video file' if model_type=='google' else ''}:**")
 
@@ -374,14 +365,6 @@ def main():
                     audio_file_added = True
 
             st.divider()
-            st.video("https://www.youtube.com/watch?v=7i9j8M_zidA")
-            st.write("📋[Medium Blog: OpenAI GPT-4o](https://medium.com/@enricdomingo/code-the-omnichat-app-integrating-gpt-4o-your-python-chatgpt-d399b90d178e)")
-            st.video("https://www.youtube.com/watch?v=1IQmWVFNQEs")
-            st.write("📋[Medium Blog: Google Gemini](https://medium.com/@enricdomingo/how-i-add-gemini-1-5-pro-api-to-my-app-chat-with-videos-images-and-audios-f42171606143)")
-            st.video("https://www.youtube.com/watch?v=kXIOazjgV-8")
-            st.write("📋[Medium Blog: Anthropic Claude 3.5](https://medium.com/p/7ec4623e2dac)")
-
-
 
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt or audio_file_added:
