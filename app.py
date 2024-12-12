@@ -1,6 +1,5 @@
 import streamlit as st
 from openai import OpenAI
-import dotenv
 import os
 from PIL import Image
 from audio_recorder_streamlit import audio_recorder
@@ -9,8 +8,9 @@ from io import BytesIO
 import google.generativeai as genai
 import random
 import anthropic
+from config import get_prompt_template, load_env, PromptTemplate
 
-dotenv.load_dotenv()
+load_env()
 
 
 anthropic_models = [
@@ -115,7 +115,7 @@ def stream_llm_response(model_params, model_type="openai", api_key=None):
         for chunk in client.chat.completions.create(
             model=model_params["model"] if "model" in model_params else "gpt-4o",
             messages=st.session_state.messages,
-            temperature=model_params["temperature"] if "temperature" in model_params else 0.3,
+            temperature=model_params["temperature"] if "temperature" in model_params else 0.7,
             max_tokens=4096,
             stream=True,
         ):
@@ -128,7 +128,7 @@ def stream_llm_response(model_params, model_type="openai", api_key=None):
         model = genai.GenerativeModel(
             model_name = model_params["model"],
             generation_config={
-                "temperature": model_params["temperature"] if "temperature" in model_params else 0.3,
+                "temperature": model_params["temperature"] if "temperature" in model_params else 0.7,
             }
         )
         gemini_messages = messages_to_gemini(st.session_state.messages)
@@ -146,7 +146,7 @@ def stream_llm_response(model_params, model_type="openai", api_key=None):
         with client.messages.stream(
             model=model_params["model"] if "model" in model_params else "claude-3-5-sonnet-20241022",
             messages=messages_to_anthropic(st.session_state.messages),
-            temperature=model_params["temperature"] if "temperature" in model_params else 0.3,
+            temperature=model_params["temperature"] if "temperature" in model_params else 0.7,
             max_tokens=4096,
         ) as stream:
             for text in stream.text_stream:
@@ -197,7 +197,7 @@ def main():
     st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>The Chai-Chat</i> 💬</h1>""")
 
     # Add tabs
-    tab_chat, tab_upwork, tab_job = st.tabs(["💬 Chat", "💼 Upwork Proposal", "🎯 Job Proposal"])
+    tab_chat, tab_upwork, tab_upwork_profile, tab_job = st.tabs(["💬 Chat", "💼 Upwork Proposal", "👤 Upwork Profile", "🎯 Job Proposal"])
 
     with tab_chat:
         # --- Side Bar ---
@@ -255,7 +255,7 @@ def main():
                 elif model.startswith("claude"): model_type = "anthropic"
                 
                 with st.popover("⚙️ Model parameters"):
-                    model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.3, step=0.1)
+                    model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1)
 
                 audio_response = st.toggle("Audio response", value=False)
                 if audio_response:
@@ -437,7 +437,7 @@ def main():
             st.write("### **📝 Upwork Prompt Settings**")
             
             # Get list of txt files from prompt directory
-            prompt_files = [f.replace('.txt', '') for f in os.listdir("./prompt") if f.endswith('.txt')]
+            prompt_files = [f.replace('.txt', '') for f in os.listdir("./prompt_templates/freelancers") if f.endswith('.txt')]
             
             upwork_prompt_type = st.selectbox(
                 "Select prompt type:",
@@ -445,7 +445,7 @@ def main():
                 key="upwork_prompt_type"
             )
 
-            question1 = read_txt_file(f"./prompt/{upwork_prompt_type}.txt")
+            question1 = read_txt_file(f"./prompt_templates/freelancers/{upwork_prompt_type}.txt")
 
         # Main Upwork content
         job_description = st.text_area(
@@ -527,6 +527,56 @@ def main():
                                 api_key=model2key[model_type]
                             )
                         )
+
+    with tab_upwork_profile:        
+        profile_title = st.text_input(
+            "Professional Title *",
+            max_chars=70,
+            placeholder="e.g., Full Stack Developer | AI Specialist | Python Expert"
+        )
+        
+        example_overview = st.text_area(
+            "Example Overview/Experience (Optional)",
+            height=200,
+            max_chars=5000,
+            placeholder="Describe your experience, skills, and expertise..."
+        )
+        
+        skills = st.text_area(
+            "Key Skills *",
+            height=100,
+            placeholder="List your main skills, one per line upto 15 skills..."
+        )
+
+        if st.button("Generate Profile", type="primary"):
+            if not profile_title or not skills:
+                st.error("Please provide both title and skills")
+                return
+
+            with st.spinner("Generating profile..."):
+                prompt = get_prompt_template(PromptTemplate.UPWORK_PROFILE).format(profile_title=profile_title, skills=skills, example_overview=example_overview)
+
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": prompt
+                    }]
+                })
+
+                with st.chat_message("assistant"):
+                    model2key = {
+                        "openai": openai_api_key,
+                        "google": google_api_key,
+                        "anthropic": anthropic_api_key,
+                    }
+                    st.write_stream(
+                        stream_llm_response(
+                            model_params=model_params,
+                            model_type=model_type,
+                            api_key=model2key[model_type]
+                        )
+                    )
 
     with tab_job:
         st.header("Job Proposal Generator")

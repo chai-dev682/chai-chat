@@ -9,4 +9,5 @@ __pycache__
 # Allow
 !fridge_food.jpg
 
-prompt/*
+fixture/*.txt
+!fixture/sample.txt
