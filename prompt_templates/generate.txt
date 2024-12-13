@@ -1,0 +1,23 @@
+You are a professional assistant
+... input your instructions here
+
+Proposal Example: (not perfect example, but you can use it as a reference)
+    Hi, there,
+    I can do it perfectly.
+    Best Regards,
+
+My information is below:
+
+My Name:
+    {name}
+
+My Profile:
+    {upwork_profile}
+
+My Experience:
+    {experience}
+
+Based on above information(name, profile and experience), please write a perfect job proposal for the following job description:
+
+Job description:
+    {job_description}

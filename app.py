@@ -8,6 +8,7 @@ from io import BytesIO
 import google.generativeai as genai
 import random
 import anthropic
+import configparser
 from config import get_prompt_template, load_env, PromptTemplate
 
 load_env()
@@ -31,15 +32,31 @@ openai_models = [
     "gpt-4-32k",
 ]
 
-def read_txt_file(file_path):
+def read_ini_file(file_path):
     try:
-        with open(file_path, 'r', encoding='utf8') as file:
-            content = file.read()
-        return content
-    except FileNotFoundError:
-        print(f"The file at {file_path} was not found.")
+        config = configparser.ConfigParser(allow_no_value=True)
+        # Preserve case sensitivity
+        config.optionxform = str
+        # Support multiline values with '''
+        config.read(file_path, encoding='utf8')
+        
+        data = {
+            'name': config.get('profile', 'name', fallback=''),
+            'upwork_profile': config.get('profile', 'upwork_profile', fallback='').strip("'''").strip(),
+            'experience': []
+        }
+        
+        # Read experience if it exists
+        if config.has_section('experience'):
+            for key in config['experience']:
+                experience_data = config.get('experience', key).strip("'''").strip()
+                data['experience'].append(experience_data)
+                
+        return data
+    except Exception as e:
+        print(f"Error reading {file_path}: {str(e)}")
         return None
-
+    
 # Function to convert the messages format from OpenAI and Streamlit to Gemini
 def messages_to_gemini(messages):
     gemini_messages = []
@@ -69,7 +86,6 @@ def messages_to_gemini(messages):
         prev_role = message["role"]
         
     return gemini_messages
-
 
 # Function to convert the messages format from OpenAI and Streamlit to Anthropic (the only difference is in the image messages)
 def messages_to_anthropic(messages):
@@ -104,7 +120,6 @@ def messages_to_anthropic(messages):
         prev_role = message["role"]
         
     return anthropic_messages
-
 
 # Function to query and stream the response from the LLM
 def stream_llm_response(model_params, model_type="openai", api_key=None):
@@ -162,7 +177,6 @@ def stream_llm_response(model_params, model_type="openai", api_key=None):
             }
         ]})
 
-
 # Function to convert file to base64
 def get_image_base64(image_raw):
     buffered = BytesIO()
@@ -180,8 +194,6 @@ def base64_to_image(base64_string):
     base64_string = base64_string.split(",")[1]
     
     return Image.open(BytesIO(base64.b64decode(base64_string)))
-
-
 
 def main():
 
@@ -437,7 +449,7 @@ def main():
             st.write("### **📝 Upwork Prompt Settings**")
             
             # Get list of txt files from prompt directory
-            prompt_files = [f.replace('.txt', '') for f in os.listdir("./prompt_templates/freelancers") if f.endswith('.txt')]
+            prompt_files = [f.replace('.ini', '') for f in os.listdir("./prompt_templates/freelancers") if f.endswith('.ini')]
             
             upwork_prompt_type = st.selectbox(
                 "Select prompt type:",
@@ -445,7 +457,7 @@ def main():
                 key="upwork_prompt_type"
             )
 
-            question1 = read_txt_file(f"./prompt_templates/freelancers/{upwork_prompt_type}.txt")
+            data = read_ini_file(f"./prompt_templates/freelancers/{upwork_prompt_type}.txt")
 
         # Main Upwork content
         job_description = st.text_area(
@@ -467,11 +479,12 @@ def main():
 
             with st.spinner("Generating proposal..."):
                 # Prepare the prompt
-                prompt = question1 + job_description + """
-
-
-                ======================================================
-                """
+                prompt = get_prompt_template(PromptTemplate.GENERATE).format(
+                    name=data["name"],
+                    upwork_profile=data["upwork_profile"],
+                    experience=data["experience"],
+                    job_description=job_description,
+                )
 
                 # Add to chat messages
                 st.session_state.messages.append({
@@ -502,15 +515,7 @@ def main():
                         "role": "user",
                         "content": [{
                             "type": "text",
-                            "text": """Great! Client is asking below questions. Based on my experience please answer below questions.
-    give me sample realistic answer
-    Please don't mention like [List relevant technologies or platforms, e.g., Google Analytics, Google Ads, specific ad servers], only give me realistic experience so that I can copy without any modification
-
-    ======================================================
-
-    """ + screening_questions + """
-
-    ======================================================"""
+                            "text": get_prompt_template(PromptTemplate.SCREENING_QUESTIONS).format(screening_questions=screening_questions)
                         }]
                     })
 

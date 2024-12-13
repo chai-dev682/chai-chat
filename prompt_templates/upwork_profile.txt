@@ -1,33 +1,8 @@
-Based on the following information, generate a compelling Upwork profile. 
-Make it professional, engaging, and highlight key strengths.
+Based on the following information, generate a Upwork profile. 
 
 Current Title: {profile_title}
 Key Skills(seperated by new line): {skills}
 
-Please reference the following example overview:
-
-{example_overview}
-
-Based on the my profile and example overview, please provide:
-I don't know example overview is good or not, but follow below tips,
-
 Please provide:
-1. An optimized professional title (max 40 characters)
-    Tips:
-    - Be descriptive about the services you offer
-    - Highlight your primary talents instead of trying to include every skill you have
-    - Make it an eye-catching title, short and visually appealing
-
-2. A well-structured overview (max 5000 characters) that:
-    - Starts with a strong hook
-    - Highlights key achievements and experience
-    - Includes relevant expertise and specializations
-    - Maintains a professional yet personable tone
-    - Incorporates relevant keywords naturally
-    Tips:
-    Think of the overview as an elevator pitch, explaining who I am and what I do best.
-
-    Keep it informative but brief; clients often evaluate many different freelancers at once. Break up blocks of text with shorter paragraphs and bullet points.
-
-    When clients search for talent, only the first 250 characters of my overview will show up without clicking for more, so I want to grab their attention in the beginning.
-
+1. An good professional title (max 40 characters)
+2. A well-structured overview (max 5000 characters)
