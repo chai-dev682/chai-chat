@@ -1,0 +1,20 @@
+Based on my profile below, generate a tailored and comprehensive cover letter for the following job description. 
+The cover letter should address:
+1. Introduction and excitement about the opportunity
+2. Highlights of relevant experience
+3. How skills align with project goals
+4. Interest in long-term partnership
+5. Examples of technical expertise that can drive success
+
+My information is below:
+
+My name:
+    {name}
+
+My Profile:
+    {job_profile}
+
+Based on above information(name, profile and experience), please write a perfect job proposal for the following job description:
+
+Job description:
+    {job_description}

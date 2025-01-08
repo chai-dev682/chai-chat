@@ -9,5 +9,5 @@ __pycache__
 # Allow
 !fridge_food.jpg
 
-fixture/*.txt
-!fixture/sample.txt
+fixture/*.ini
+!fixture/sample.ini

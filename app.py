@@ -43,14 +43,8 @@ def read_ini_file(file_path):
         data = {
             'name': config.get('profile', 'name', fallback=''),
             'upwork_profile': config.get('profile', 'upwork_profile', fallback='').strip("'''").strip(),
-            'experience': []
+            'job_profile': config.get('profile', 'job_profile', fallback='').strip("'''").strip(),
         }
-        
-        # Read experience if it exists
-        if config.has_section('experience'):
-            for key in config['experience']:
-                experience_data = config.get('experience', key).strip("'''").strip()
-                data['experience'].append(experience_data)
                 
         return data
     except Exception as e:
@@ -449,7 +443,7 @@ def main():
             st.write("### **📝 Upwork Prompt Settings**")
             
             # Get list of txt files from prompt directory
-            prompt_files = [f.replace('.ini', '') for f in os.listdir("./prompt_templates/freelancers") if f.endswith('.ini')]
+            prompt_files = [f.replace('.ini', '') for f in os.listdir("./fixture") if f.endswith('.ini')]
             
             upwork_prompt_type = st.selectbox(
                 "Select prompt type:",
@@ -457,18 +451,20 @@ def main():
                 key="upwork_prompt_type"
             )
 
-            data = read_ini_file(f"./prompt_templates/freelancers/{upwork_prompt_type}.txt")
+            data = read_ini_file(f"./fixture/{upwork_prompt_type}.ini")
 
         # Main Upwork content
         job_description = st.text_area(
             "Job Description *",
             height=200,
+            key="upwork_job_description",
             placeholder="Paste the job description here..."
         )
         
         screening_questions = st.text_area(
             "Screening Questions (Optional)",
             height=150,
+            key="screening_questions",
             placeholder="Paste any screening questions here..."
         )
 
@@ -482,7 +478,7 @@ def main():
                 prompt = get_prompt_template(PromptTemplate.GENERATE).format(
                     name=data["name"],
                     upwork_profile=data["upwork_profile"],
-                    experience=data["experience"],
+                    # experience=data["experience"],
                     job_description=job_description,
                 )
 
@@ -543,6 +539,7 @@ def main():
         example_overview = st.text_area(
             "Example Overview/Experience (Optional)",
             height=200,
+            key="example_overview",
             max_chars=5000,
             placeholder="Describe your experience, skills, and expertise..."
         )
@@ -550,6 +547,7 @@ def main():
         skills = st.text_area(
             "Key Skills *",
             height=100,
+            key="skills",
             placeholder="List your main skills, one per line upto 15 skills..."
         )
 
@@ -585,7 +583,89 @@ def main():
 
     with tab_job:
         st.header("Job Proposal Generator")
-        st.info("Job proposal functionality coming soon...")
+        
+        # Job Description Input
+        job_description = st.text_area(
+            "Job Description *",
+            height=200,
+            key="job_description",
+            placeholder="Paste the job description here..."
+        )
+        
+        if st.button("Generate Cover Letter", type="primary"):
+            if not job_description:
+                st.error("Please provide a job description")
+                return
+            
+            with st.spinner("Generating cover letter..."):
+                prompt = get_prompt_template(PromptTemplate.JOB_COVER_LETTER).format(
+                    name=data["name"],
+                    job_profile=data["job_profile"],
+                    job_description=job_description,
+                )
+
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": prompt
+                    }]
+                })
+
+                with st.chat_message("assistant"):
+                    model2key = {
+                        "openai": openai_api_key,
+                        "google": google_api_key,
+                        "anthropic": anthropic_api_key,
+                    }
+                    st.write_stream(
+                        stream_llm_response(
+                            model_params=model_params,
+                            model_type=model_type,
+                            api_key=model2key[model_type]
+                        )
+                    )
+        
+        # Q&A Section
+        st.divider()
+        st.subheader("Ask Questions About the Job")
+        
+        question = st.text_input(
+            "Your Question",
+            placeholder="Ask any question about how to respond to this job..."
+        )
+        
+        if st.button("Get Answer", type="primary"):
+            if not question:
+                st.error("Please enter a question")
+                return
+            
+            with st.spinner("Generating answer..."):
+                prompt = get_prompt_template(PromptTemplate.SCREENING_QUESTIONS).format(
+                    screening_questions=question,
+                )
+
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": prompt
+                    }]
+                })
+
+                with st.chat_message("assistant"):
+                    model2key = {
+                        "openai": openai_api_key,
+                        "google": google_api_key,
+                        "anthropic": anthropic_api_key,
+                    }
+                    st.write_stream(
+                        stream_llm_response(
+                            model_params=model_params,
+                            model_type=model_type,
+                            api_key=model2key[model_type]
+                        )
+                    )
 
 
 if __name__=="__main__":

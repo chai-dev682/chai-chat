@@ -15,7 +15,8 @@ class PromptTemplate(Enum):
     UPWORK_PROFILE = "upwork_profile.txt"
     SCREENING_QUESTIONS = "screening_questions.txt"
     GENERATE = "generate.txt"
-
+    JOB_COVER_LETTER = "job_cover_letter.txt"
+    
 def get_prompt_template(prompt_template: PromptTemplate):
     with open(join(PROMPT_ROOT, prompt_template.value), "rt") as f:
         return f.read()
