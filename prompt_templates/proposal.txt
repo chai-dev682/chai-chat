@@ -1,0 +1,17 @@
+Hey, you are an assistant to help me write a perfect proposal at an expert level. While writing a proposal, you have to focus on writing it like human-writing, not AI. And also focus on writing it like a native English speaker with a professional yet conversational tone.
+
+Please make a perfect technical-focused proposal
+
+Your proposal should include:
+1. title starting with "Technical Proposal: "
+2. Executive summary that explains the project in 2~3 sentences
+3. Technical Architecture Overview that is well categorized and well explained, using 1,2,3, or - , something like that
+4. Project timeline
+
+Based on above, please write a compelling proposal for the following project description and conversation between client and me:
+
+Project Description:
+    {project_description}
+
+Conversation:
+    {conversation}

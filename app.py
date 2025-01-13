@@ -203,7 +203,10 @@ def main():
     st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>The Chai-Chat</i> 💬</h1>""")
 
     # Add tabs
-    tab_chat, tab_upwork, tab_upwork_profile, tab_job = st.tabs(["💬 Chat", "💼 Upwork Proposal", "👤 Upwork Profile", "🎯 Job Proposal"])
+    tab_chat, tab_upwork, tab_upwork_profile, tab_job, tab_proposal, tab_conversation = st.tabs([
+        "💬 Chat", "💼 Upwork Proposal", "👤 Upwork Profile", "🎯 Job Proposal", 
+        "📝 General Proposal", "💬 Conversation Response"
+    ])
 
     with tab_chat:
         # --- Side Bar ---
@@ -667,6 +670,116 @@ def main():
                         )
                     )
 
+    with tab_proposal:
+        st.header("General Proposal Generator")
+        
+        # Project Description Input
+        project_description = st.text_area(
+            "Project Description *",
+            height=200,
+            key="project_description",
+            placeholder="Paste the project description here..."
+        )
+        
+        # Experience Input
+        conversation = st.text_area(
+            "Conversation (Optional)",
+            height=150,
+            key="conversation",
+            placeholder="Add any conversation you want to add..."
+        )
+        
+        if st.button("Generate Proposal", type="primary", key="generate_proposal"):
+            if not project_description:
+                st.error("Please provide a project description")
+                return
+            
+            with st.spinner("Generating proposal..."):
+                prompt = get_prompt_template(PromptTemplate.PROPOSAL).format(
+                    conversation=conversation or "N/A",
+                    project_description=project_description,
+                )
+
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": prompt
+                    }]
+                })
+
+                with st.chat_message("assistant"):
+                    model2key = {
+                        "openai": openai_api_key,
+                        "google": google_api_key,
+                        "anthropic": anthropic_api_key,
+                    }
+                    st.write_stream(
+                        stream_llm_response(
+                            model_params=model_params,
+                            model_type=model_type,
+                            api_key=model2key[model_type]
+                        )
+                    )
+
+    with tab_conversation:
+        st.header("Conversation Response Generator")
+        
+        # Project Context
+        job_description = st.text_area(
+            "Job Description *",
+            height=150,
+            key="conv_job_description",
+            placeholder="Paste the original job description here..."
+        )
+        
+        initial_proposal = st.text_area(
+            "Initial Cover Letter/Proposal *",
+            height=150,
+            key="initial_proposal",
+            placeholder="Paste your initial proposal or cover letter here..."
+        )
+        
+        conversation_history = st.text_area(
+            "Conversation History *",
+            height=200,
+            key="conversation_history",
+            placeholder="Paste the conversation between you and the client here..."
+        )
+        
+        if st.button("Generate Response", type="primary", key="generate_response"):
+            if not all([job_description, initial_proposal, conversation_history]):
+                st.error("Please provide all required information")
+                return
+            
+            with st.spinner("Generating response..."):
+                prompt = get_prompt_template(PromptTemplate.CONVERSATION_RESPONSE).format(
+                    job_description=job_description,
+                    cover_letter=initial_proposal,
+                    conversation=conversation_history
+                )
+
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": prompt
+                    }]
+                })
+
+                with st.chat_message("assistant"):
+                    model2key = {
+                        "openai": openai_api_key,
+                        "google": google_api_key,
+                        "anthropic": anthropic_api_key,
+                    }
+                    st.write_stream(
+                        stream_llm_response(
+                            model_params=model_params,
+                            model_type=model_type,
+                            api_key=model2key[model_type]
+                        )
+                    )
 
 if __name__=="__main__":
     main()

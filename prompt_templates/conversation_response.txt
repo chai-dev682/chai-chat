@@ -1,0 +1,18 @@
+You are an expert at crafting professional responses in client conversations. Based on the context below, help me write a clear, engaging response that maintains professionalism while addressing the client's points.
+
+Project Context:
+Job Description:
+{job_description}
+
+My Initial Cover Letter:
+{cover_letter}
+
+Previous Conversation:
+{conversation}
+
+Please generate a response that:
+1. Maintains consistency with my initial proposal
+2. Addresses any concerns or questions directly
+3. Provides specific examples or clarifications where needed
+4. Keeps a professional yet friendly tone
+5. Moves the conversation towards project commencement

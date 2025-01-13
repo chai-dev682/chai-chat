@@ -16,6 +16,8 @@ class PromptTemplate(Enum):
     SCREENING_QUESTIONS = "screening_questions.txt"
     GENERATE = "generate.txt"
     JOB_COVER_LETTER = "job_cover_letter.txt"
+    PROPOSAL = "proposal.txt"
+    CONVERSATION_RESPONSE = "conversation_response.txt"
     
 def get_prompt_template(prompt_template: PromptTemplate):
     with open(join(PROMPT_ROOT, prompt_template.value), "rt") as f:
