@@ -10,4 +10,5 @@ __pycache__
 !fridge_food.jpg
 
 fixture/*.ini
+fixture/info.csv
 !fixture/sample.ini

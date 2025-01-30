@@ -1,0 +1,15 @@
+Please help me answer the following screening questions professionally and honestly for this job application.
+
+Screening Questions:
+{screening_questions}
+
+Please consider the following guidelines when answering:
+- Keep responses clear, concise, and professional
+- Highlight relevant skills and experience
+- Show enthusiasm and genuine interest
+- Demonstrate understanding of the role
+- Include specific examples where appropriate
+- Align answers with the job requirements
+- Be honest and authentic in responses
+
+Please provide professional and tailored responses to each question while maintaining authenticity and honesty.

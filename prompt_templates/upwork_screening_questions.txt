@@ -1,0 +1,14 @@
+Please help me answer the following Upwork screening questions professionally and honestly for this job application.
+
+Screening Questions:
+{screening_questions}
+
+Guidelines for Responses:
+- Provide clear and concise answers
+- Highlight relevant skills and experience
+- Demonstrate enthusiasm and genuine interest in the role
+- Show understanding of the job requirements
+- Use specific examples where applicable
+- Maintain honesty and authenticity in responses
+
+Please generate tailored responses to each question while maintaining professionalism and authenticity.

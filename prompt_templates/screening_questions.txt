@@ -1,4 +1,0 @@
-please answer below questions.
-
-Screening Questions:
-    {screening_questions}

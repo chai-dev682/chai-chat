@@ -10,6 +10,7 @@ import random
 import anthropic
 import configparser
 from config import get_prompt_template, load_env, PromptTemplate
+from src.vectordb_utils import query_pinecone
 
 load_env()
 
@@ -481,7 +482,7 @@ def main():
                 prompt = get_prompt_template(PromptTemplate.GENERATE).format(
                     name=data["name"],
                     upwork_profile=data["upwork_profile"],
-                    # experience=data["experience"],
+                    experience=query_pinecone(job_description),
                     job_description=job_description,
                 )
 
@@ -514,7 +515,7 @@ def main():
                         "role": "user",
                         "content": [{
                             "type": "text",
-                            "text": get_prompt_template(PromptTemplate.SCREENING_QUESTIONS).format(screening_questions=screening_questions)
+                            "text": get_prompt_template(PromptTemplate.UPWORK_SCREENING_QUESTIONS).format(screening_questions=screening_questions)
                         }]
                     })
 
@@ -644,7 +645,7 @@ def main():
                 return
             
             with st.spinner("Generating answer..."):
-                prompt = get_prompt_template(PromptTemplate.SCREENING_QUESTIONS).format(
+                prompt = get_prompt_template(PromptTemplate.JOB_SCREENING_QUESTIONS).format(
                     screening_questions=question,
                 )
 
