@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# tiktoken_cache_dir = "C:/Users/Administrator/Downloads"
+# os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
+
+# # validate
+# assert os.path.exists(os.path.join(tiktoken_cache_dir,"9b5ad71b2ce5302211f9c61530b329a4922fc6a4"))
+
 PROJECT_ROOT = "./"
 PROMPT_ROOT = join(PROJECT_ROOT, "prompt_templates")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
