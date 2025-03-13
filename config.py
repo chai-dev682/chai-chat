@@ -36,5 +36,5 @@ class PromptTemplate(Enum):
     SAVED_REPLY = "saved_reply.txt"
     
 def get_prompt_template(prompt_template: PromptTemplate):
-    with open(join(PROMPT_ROOT, prompt_template.value), "rt") as f:
+    with open(join(PROMPT_ROOT, prompt_template.value), "rt", encoding="utf-8") as f:
         return f.read()

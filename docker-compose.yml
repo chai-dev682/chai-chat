@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  chai-chat:
+    build: .
+    container_name: chai-chat
+    ports:
+      - "3005:3005"
+    volumes:
+      - .:/app
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=ai-driven-gtps
+    restart: unless-stopped
