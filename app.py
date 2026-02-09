@@ -11,6 +11,7 @@ from audio_recorder_streamlit import audio_recorder
 
 from config import get_prompt_template, load_env, PromptTemplate
 from src.vectordb_utils import query_pinecone
+from src.conv_db import load_all_sessions, save_session, rename_session, delete_session
 
 # --- Constants ---
 ANTHROPIC_MODELS = ["claude-opus-4-6"]
@@ -148,11 +149,14 @@ def init_session_state():
         st.session_state.prev_speech_hash = None
     if "nav_selection" not in st.session_state:
         st.session_state.nav_selection = "💬 2English"
-    # Conversation Response tab: persistent chat history across follow-ups
-    if "conv_context" not in st.session_state:
-        st.session_state.conv_context = None  # stores the initial context dict
-    if "conv_chat_history" not in st.session_state:
-        st.session_state.conv_chat_history = []  # list of {role, text} dicts for display
+    # Conversation Response tab: multiple saved job sessions (loaded from SQLite)
+    if "conv_sessions" not in st.session_state:
+        st.session_state.conv_sessions = load_all_sessions()
+    if "conv_active_id" not in st.session_state:
+        st.session_state.conv_active_id = None  # currently active session id
+    # Counter used to reset the file uploader widget after each follow-up
+    if "conv_upload_key_counter" not in st.session_state:
+        st.session_state.conv_upload_key_counter = 0
 
 def on_nav_change():
     """
@@ -173,9 +177,8 @@ def on_nav_change():
         if key in st.session_state:
             del st.session_state[key]
 
-    # Clear conversation response follow-up chat when leaving its tab
-    st.session_state.conv_context = None
-    st.session_state.conv_chat_history = []
+    # Conversation sessions persist across tab switches -- just clear the LLM messages
+    # (sessions are kept in conv_sessions, active one tracked by conv_active_id)
 
 # --- Render Functions ---
 
@@ -524,47 +527,126 @@ def _build_conv_messages(context, new_client_content=None):
 
     return messages
 
-def render_conversation_response(api_keys, model_params, model_type, *args):
-    st.header("Conversation Response Generator")
+def _get_active_session():
+    """Return the active session dict, or None."""
+    sid = st.session_state.conv_active_id
+    if sid and sid in st.session_state.conv_sessions:
+        return st.session_state.conv_sessions[sid]
+    return None
 
-    has_context = st.session_state.conv_context is not None
+def _save_active_session(context, chat_history):
+    """Save context and chat_history into the active session."""
+    sid = st.session_state.conv_active_id
+    if sid and sid in st.session_state.conv_sessions:
+        st.session_state.conv_sessions[sid]["context"] = context
+        st.session_state.conv_sessions[sid]["chat_history"] = chat_history
 
-    # --- Initial setup form (collapsible once context is set) ---
-    with st.expander("📋 Job Context", expanded=not has_context):
+def _create_session_label(job_description):
+    """Generate a short label from the job description (first ~50 chars)."""
+    text = job_description.strip().replace("\n", " ")
+    return text[:50] + ("..." if len(text) > 50 else "")
+
+def _render_conv_right_panel():
+    """Right panel: previous conversations list."""
+    sessions = st.session_state.conv_sessions
+    active_id = st.session_state.conv_active_id
+
+    st.markdown("##### History")
+
+    # "New" button at the top to start fresh
+    if st.button("➕ New", key="conv_new_btn", use_container_width=True):
+        st.session_state.conv_active_id = None
+        st.session_state.messages = []
+        st.rerun()
+
+    if not sessions:
+        st.caption("No conversations yet.")
+        return
+
+    for sid, sess in sessions.items():
+        is_active = sid == active_id
+        col_btn, col_edit, col_del = st.columns([5, 1, 1])
+        with col_btn:
+            label = ("▶ " if is_active else "") + sess["label"]
+            if st.button(
+                label,
+                key=f"conv_sess_{sid}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                if not is_active:
+                    st.session_state.conv_active_id = sid
+                    st.session_state.messages = []
+                    st.rerun()
+        with col_edit:
+            with st.popover("✏️"):
+                new_label = st.text_input(
+                    "Rename",
+                    value=sess["label"],
+                    key=f"conv_rename_{sid}",
+                    label_visibility="collapsed",
+                )
+                if st.button("Save", key=f"conv_rename_save_{sid}"):
+                    new_label = new_label.strip()
+                    if new_label and new_label != sess["label"]:
+                        sess["label"] = new_label
+                        rename_session(sid, new_label)
+                        st.rerun()
+        with col_del:
+            if st.button("🗑️", key=f"conv_del_{sid}"):
+                delete_session(sid)
+                del st.session_state.conv_sessions[sid]
+                if active_id == sid:
+                    st.session_state.conv_active_id = None
+                st.session_state.messages = []
+                st.rerun()
+
+
+def _render_conv_main_panel(api_keys, model_params, model_type):
+    """Left/main panel: new conversation form + active chat."""
+    active_session = _get_active_session()
+    has_active = active_session is not None
+
+    # --- New conversation form (or active session's context viewer) ---
+    if not has_active:
+        # Full form when no session is active
+        st.markdown("##### New Conversation")
         job_description = st.text_area("Job Description *", height=150, key="conv_job_description", placeholder="Paste the original job description here...")
         initial_proposal = st.text_area("Initial Cover Letter/Proposal *", height=150, key="initial_proposal", placeholder="Paste your initial proposal or cover letter here...")
         conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
-
-        col_gen, col_reset = st.columns([3, 1])
-        with col_gen:
+        generate_initial = st.button("Generate Response", type="primary", key="generate_response")
+    else:
+        # Collapsed context when a session is active
+        with st.expander("📋 Job Context"):
+            job_description = st.text_area("Job Description *", height=150, key="conv_job_description", placeholder="Paste the original job description here...")
+            initial_proposal = st.text_area("Initial Cover Letter/Proposal *", height=150, key="initial_proposal", placeholder="Paste your initial proposal or cover letter here...")
+            conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
             generate_initial = st.button("Generate Response", type="primary", key="generate_response")
-        with col_reset:
-            if has_context:
-                if st.button("🗑️ Reset Chat", key="reset_conv_chat"):
-                    st.session_state.conv_context = None
-                    st.session_state.conv_chat_history = []
-                    st.session_state.messages = []
-                    st.rerun()
 
-    # --- Handle initial generation ---
+    # --- Handle initial generation (creates a new session) ---
     if generate_initial:
         if not all([job_description, initial_proposal, conversation_history]):
             st.error("Please provide all required information")
             return
 
-        # Store context for follow-up messages
-        st.session_state.conv_context = {
+        new_id = f"s_{random.randint(100000, 999999)}"
+        context = {
             "job_description": job_description,
             "cover_letter": initial_proposal,
             "conversation": conversation_history,
-            "chat_history": [],  # will accumulate follow-up exchanges as proper turns
+            "chat_history": [],
         }
-        st.session_state.conv_chat_history = []
+
+        st.session_state.conv_sessions[new_id] = {
+            "label": _create_session_label(job_description),
+            "context": context,
+            "chat_history": [],
+        }
+        st.session_state.conv_active_id = new_id
         st.session_state.messages = []
 
         with st.spinner("Generating response..."):
-            # Build messages using the proper multi-turn builder (just the initial context)
-            api_messages = _build_conv_messages(st.session_state.conv_context)
+            api_messages = _build_conv_messages(context)
             st.session_state.messages = api_messages
 
             with st.chat_message("assistant"):
@@ -574,18 +656,19 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
                     response_text += chunk
                     response_container.write(response_text)
 
-            # Save the first assistant response into both display history and context turns
-            st.session_state.conv_chat_history.append({"role": "assistant", "text": response_text})
-            st.session_state.conv_context["chat_history"].append({"role": "assistant", "text": response_text})
+            sess = st.session_state.conv_sessions[new_id]
+            sess["context"]["chat_history"].append({"role": "assistant", "text": response_text})
+            sess["chat_history"].append({"role": "assistant", "text": response_text})
+            save_session(new_id, sess["label"], sess["context"], sess["chat_history"])
             st.rerun()
 
-    # --- Display chat history & follow-up input ---
-    if has_context and st.session_state.conv_chat_history:
+    # --- Active session: display chat history & follow-up input ---
+    active_session = _get_active_session()  # refresh after potential creation
+    if active_session and active_session["chat_history"]:
         st.divider()
-        st.subheader("💬 Chat")
 
         # Render all past exchanges
-        for entry in st.session_state.conv_chat_history:
+        for entry in active_session["chat_history"]:
             if entry["role"] == "client":
                 with st.chat_message("user"):
                     st.markdown(entry["text"])
@@ -598,12 +681,13 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
                 with st.chat_message("assistant"):
                     st.markdown(entry["text"])
 
-        # Image upload for follow-up messages
+        # Image upload for follow-up messages (dynamic key to clear after each send)
+        upload_key = f"conv_followup_images_{st.session_state.conv_upload_key_counter}"
         uploaded_images = st.file_uploader(
             "📎 Attach images from client (optional)",
             type=["png", "jpg", "jpeg", "gif", "webp"],
             accept_multiple_files=True,
-            key="conv_followup_images",
+            key=upload_key,
             help="Upload screenshots or images the client sent in their latest message."
         )
 
@@ -616,14 +700,14 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
         # Follow-up input: paste client's latest message
         client_msg = st.chat_input("Paste client's message to get a draft reply...")
         if client_msg:
-            # Build image content if images are attached
+            context = active_session["context"]
+
             image_content_parts = []
             image_urls_for_display = []
             if uploaded_images:
                 image_content_parts = _build_image_content(uploaded_images)
                 image_urls_for_display = [p["image_url"]["url"] for p in image_content_parts]
 
-            # Show the client message immediately
             with st.chat_message("user"):
                 st.markdown(client_msg)
                 if image_urls_for_display:
@@ -632,29 +716,21 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
                         with img_cols[i % len(img_cols)]:
                             st.image(img_url, use_container_width=True)
 
-            # Build the new user content (images + text)
-            new_user_content = []
-            if image_content_parts:
-                new_user_content.extend(image_content_parts)
             msg_text = client_msg
             if uploaded_images:
                 msg_text += "\n\n(The client attached images above. Reference any relevant details in your response.)"
-            new_user_content.append({"type": "text", "text": msg_text})
 
-            # Record to display history
             chat_display_entry = {"role": "client", "text": client_msg}
             if image_urls_for_display:
                 chat_display_entry["images"] = image_urls_for_display
-            st.session_state.conv_chat_history.append(chat_display_entry)
+            active_session["chat_history"].append(chat_display_entry)
 
-            # Record to context (keeps image_parts so _build_conv_messages can replay them)
             context_entry = {"role": "client", "text": msg_text}
             if image_content_parts:
                 context_entry["image_parts"] = image_content_parts
-            st.session_state.conv_context["chat_history"].append(context_entry)
+            context["chat_history"].append(context_entry)
 
-            # Build proper multi-turn messages: system context → assistant → user → assistant → ...
-            api_messages = _build_conv_messages(st.session_state.conv_context)
+            api_messages = _build_conv_messages(context)
             st.session_state.messages = api_messages
 
             with st.chat_message("assistant"):
@@ -664,10 +740,24 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
                     response_text += chunk
                     response_container.write(response_text)
 
-            # Save to display history + context for next round
-            st.session_state.conv_chat_history.append({"role": "assistant", "text": response_text})
-            st.session_state.conv_context["chat_history"].append({"role": "assistant", "text": response_text})
+            active_session["chat_history"].append({"role": "assistant", "text": response_text})
+            context["chat_history"].append({"role": "assistant", "text": response_text})
+            sid = st.session_state.conv_active_id
+            save_session(sid, active_session["label"], context, active_session["chat_history"])
+
+            st.session_state.conv_upload_key_counter += 1
             st.rerun()
+
+
+def render_conversation_response(api_keys, model_params, model_type, *args):
+    # Two-column layout: main panel (left) + history panel (right)
+    main_col, right_col = st.columns([3, 1])
+
+    with right_col:
+        _render_conv_right_panel()
+
+    with main_col:
+        _render_conv_main_panel(api_keys, model_params, model_type)
 
 # --- Main ---
 

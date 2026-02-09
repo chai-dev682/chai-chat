@@ -5,6 +5,7 @@ __pycache__
 *.jpg
 *.mp4
 *.png
+*.db
 
 # Allow
 !fridge_food.jpg
