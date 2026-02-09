@@ -20,6 +20,39 @@ OPENAI_MODELS = ["gpt-5.2"]
 
 # --- Helper Functions ---
 
+def _copy_button(text, key):
+    """Render a small copy-to-clipboard button for the given text."""
+    # Base64-encode the text so we don't need to worry about escaping
+    # quotes, backticks, newlines, etc. in the JS string.
+    text_b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    st.components.v1.html(f"""
+    <button id="copybtn" style="
+        background: none;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 4px 12px;
+        cursor: pointer;
+        font-size: 0.85em;
+        color: #888;
+    ">📋 Copy</button>
+    <script>
+    const btn = document.getElementById('copybtn');
+    btn.addEventListener('click', function() {{
+        const text = atob("{text_b64}");
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.textContent = 'Copied!';
+        setTimeout(function() {{ btn.textContent = '📋 Copy'; }}, 1500);
+    }});
+    </script>
+    """, height=40)
+
 def get_image_base64(image_raw):
     buffered = BytesIO()
     image_raw.save(buffered, format=image_raw.format)
@@ -312,11 +345,13 @@ def render_2english(api_keys, model_params, model_type, audio_response, tts_voic
     # st.divider()
 
     # Display Messages
-    for message in st.session_state.messages:
+    for msg_idx, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             for content in message["content"]:
                 if content["type"] == "text":
                     st.write(content["text"])
+                    if message["role"] == "assistant":
+                        _copy_button(content["text"], f"copy_2eng_{msg_idx}")
                 elif content["type"] == "image_url":      
                     st.image(content["image_url"]["url"])
                 elif content["type"] == "video_file":
@@ -393,6 +428,8 @@ def render_2english(api_keys, model_params, model_type, audio_response, tts_voic
                 response_text += chunk
                 response_container.write(response_text)
             
+            _copy_button(response_text, "copy_2eng_live")
+
             # Append assistant response to history
             st.session_state.messages.append({
                 "role": "assistant",
@@ -471,6 +508,7 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                     response_text += chunk
                     response_container.write(response_text)
                 
+                _copy_button(response_text, "copy_proposal")
                 st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
 
             if screening_questions:
@@ -484,6 +522,7 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                         sq_response += chunk
                         sq_container.write(sq_response)
                     
+                    _copy_button(sq_response, "copy_screening")
                     st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": sq_response}]})
 
 def _build_conv_messages(context, new_client_content=None):
@@ -656,6 +695,8 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
                     response_text += chunk
                     response_container.write(response_text)
 
+                _copy_button(response_text, "copy_conv_initial")
+
             sess = st.session_state.conv_sessions[new_id]
             sess["context"]["chat_history"].append({"role": "assistant", "text": response_text})
             sess["chat_history"].append({"role": "assistant", "text": response_text})
@@ -668,7 +709,7 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
         st.divider()
 
         # Render all past exchanges
-        for entry in active_session["chat_history"]:
+        for entry_idx, entry in enumerate(active_session["chat_history"]):
             if entry["role"] == "client":
                 with st.chat_message("user"):
                     st.markdown(entry["text"])
@@ -680,6 +721,7 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
             else:
                 with st.chat_message("assistant"):
                     st.markdown(entry["text"])
+                    _copy_button(entry["text"], f"copy_conv_{entry_idx}")
 
         # Image upload for follow-up messages (dynamic key to clear after each send)
         upload_key = f"conv_followup_images_{st.session_state.conv_upload_key_counter}"
@@ -740,6 +782,8 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
                     response_text += chunk
                     response_container.write(response_text)
 
+                _copy_button(response_text, "copy_conv_live")
+
             active_session["chat_history"].append({"role": "assistant", "text": response_text})
             context["chat_history"].append({"role": "assistant", "text": response_text})
             sid = st.session_state.conv_active_id
@@ -762,7 +806,7 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
 # --- Main ---
 
 def main():
-    st.set_page_config(page_title="The Chai-Chat", page_icon="🤖", layout="centered", initial_sidebar_state="expanded")
+    st.set_page_config(page_title="The Chai-Chat", page_icon="🤖", layout="wide", initial_sidebar_state="expanded")
     load_env()
     init_session_state()
 
