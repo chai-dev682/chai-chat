@@ -20,4 +20,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Command to run the application
-CMD ["streamlit", "run", "main.py", "--server.port=3005"]
+CMD ["streamlit", "run", "app.py", "--server.port=3005"]
