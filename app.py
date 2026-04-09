@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import re
 import base64
 import random
 from io import BytesIO
@@ -56,11 +57,30 @@ def _tone_selector(key_suffix):
 
 # --- Helper Functions ---
 
+def _to_unicode_bold(char):
+    """Convert a single character to its Unicode Mathematical Bold equivalent."""
+    if 'A' <= char <= 'Z':
+        return chr(0x1D400 + (ord(char) - ord('A')))
+    elif 'a' <= char <= 'z':
+        return chr(0x1D41A + (ord(char) - ord('a')))
+    elif '0' <= char <= '9':
+        return chr(0x1D7CE + (ord(char) - ord('0')))
+    return char
+
+def _markdown_to_plain(text):
+    """Convert markdown formatting to plain text with Unicode bold for **bold** spans."""
+    text = re.sub(r'\*\*(.+?)\*\*', lambda m: ''.join(_to_unicode_bold(c) for c in m.group(1)), text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    return text
+
 def _copy_button(text, key):
     """Render a small copy-to-clipboard button for the given text."""
     # Base64-encode the text so we don't need to worry about escaping
     # quotes, backticks, newlines, etc. in the JS string.
-    text_b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    clean_text = _markdown_to_plain(text)
+    text_b64 = base64.b64encode(clean_text.encode("utf-8")).decode("ascii")
     st.components.v1.html(f"""
     <button id="copybtn" style="
         background: none;
@@ -227,6 +247,8 @@ def init_session_state():
     # Counter used to reset the file uploader widget after each follow-up
     if "conv_upload_key_counter" not in st.session_state:
         st.session_state.conv_upload_key_counter = 0
+    if "proposal_followup_history" not in st.session_state:
+        st.session_state.proposal_followup_history = []
 
 def on_nav_change():
     """
@@ -246,6 +268,12 @@ def on_nav_change():
     for key in volatile_keys:
         if key in st.session_state:
             del st.session_state[key]
+
+    # Clear proposal follow-up state
+    st.session_state.pop("proposal_followup_history", None)
+    for key in ["last_proposal_text", "last_proposal_job_desc",
+                "last_screening_response", "last_screening_questions"]:
+        st.session_state.pop(key, None)
 
     # Conversation sessions persist across tab switches -- just clear the LLM messages
     # (sessions are kept in conv_sessions, active one tracked by conv_active_id)
@@ -546,19 +574,86 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                 _copy_button(response_text, "copy_proposal")
                 st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
 
+            st.session_state.last_proposal_text = response_text
+            st.session_state.last_proposal_job_desc = job_description
+
             if screening_questions:
                 sq_prompt = get_prompt_template(PromptTemplate.UPWORK_SCREENING_QUESTIONS).format(screening_questions=screening_questions)
                 st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": sq_prompt}]})
-                
+
                 with st.chat_message("assistant"):
                     sq_response = ""
                     sq_container = st.empty()
                     for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
                         sq_response += chunk
                         sq_container.write(sq_response)
-                    
+
                     _copy_button(sq_response, "copy_screening")
                     st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": sq_response}]})
+
+                st.session_state.last_screening_response = sq_response
+                st.session_state.last_screening_questions = screening_questions
+
+            st.session_state.proposal_followup_history = []
+
+    # --- Follow-up feedback section ---
+    has_proposal = st.session_state.messages and any(
+        m.get("role") == "assistant" for m in st.session_state.messages
+    )
+    if has_proposal:
+        st.divider()
+        st.markdown("##### Feedback & Follow-up")
+
+        for fi, fentry in enumerate(st.session_state.proposal_followup_history):
+            with st.chat_message(fentry["role"] if fentry["role"] == "assistant" else "user"):
+                st.markdown(fentry["text"])
+                if fentry["role"] == "assistant":
+                    _copy_button(fentry["text"], f"copy_proposal_fu_{fi}")
+
+        feedback_type = st.radio(
+            "How is the proposal?",
+            ["Good - ask follow-up", "Needs improvement"],
+            key="proposal_feedback_type",
+            horizontal=True,
+        )
+
+        followup_msg = st.chat_input("Your feedback or follow-up question...")
+        if followup_msg:
+            if feedback_type == "Needs improvement":
+                user_prompt = f"The proposal needs improvement. Here is my feedback:\n{followup_msg}\n\nPlease regenerate or revise the proposal based on this feedback."
+            else:
+                user_prompt = followup_msg
+
+            st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": user_prompt}]})
+            st.session_state.proposal_followup_history.append({"role": "user", "text": followup_msg})
+
+            with st.chat_message("assistant"):
+                response_text = ""
+                response_container = st.empty()
+                for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                    response_text += chunk
+                    response_container.write(response_text)
+                _copy_button(response_text, "copy_proposal_fu_live")
+
+            st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
+            st.session_state.proposal_followup_history.append({"role": "assistant", "text": response_text})
+            st.rerun()
+
+        # --- Move to Upwork Response button ---
+        if st.session_state.get("last_proposal_text"):
+            st.divider()
+            if st.button("Move to Upwork Response →", key="move_to_response"):
+                st.session_state.conv_job_description = st.session_state.get("last_proposal_job_desc", "")
+                st.session_state.initial_proposal = st.session_state.get("last_proposal_text", "")
+                st.session_state.conversation_history = ""
+                if st.session_state.get("last_screening_response"):
+                    st.session_state.conv_screening_qa = (
+                        f"Questions:\n{st.session_state.get('last_screening_questions', '')}\n\n"
+                        f"Answers:\n{st.session_state.get('last_screening_response', '')}"
+                    )
+                st.session_state.nav_selection = "💬 Upwork Response"
+                st.rerun()
+
 
 def _build_conv_messages(context, new_client_content=None):
     """
@@ -580,6 +675,9 @@ def _build_conv_messages(context, new_client_content=None):
         cover_letter=context["cover_letter"],
         conversation=context["conversation"],
     )
+    screening_qa = context.get("screening_qa", "").strip()
+    if screening_qa:
+        system_prompt += f"\n\n**Screening Questions & My Answers:**\n{screening_qa}"
     messages = [
         {"role": "user", "content": [{"type": "text", "text": system_prompt}]}
     ]
@@ -688,6 +786,7 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
         job_description = st.text_area("Job Description *", height=150, key="conv_job_description", placeholder="Paste the original job description here...")
         initial_proposal = st.text_area("Initial Cover Letter/Proposal *", height=150, key="initial_proposal", placeholder="Paste your initial proposal or cover letter here...")
         conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
+        screening_qa = st.text_area("Screening Questions & Answers (Optional)", height=150, key="conv_screening_qa", placeholder="Paste the screening questions and your answers here...")
         generate_initial = st.button("Generate Response", type="primary", key="generate_response")
     else:
         # Collapsed context when a session is active
@@ -695,6 +794,7 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
             job_description = st.text_area("Job Description *", height=150, key="conv_job_description", placeholder="Paste the original job description here...")
             initial_proposal = st.text_area("Initial Cover Letter/Proposal *", height=150, key="initial_proposal", placeholder="Paste your initial proposal or cover letter here...")
             conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
+            screening_qa = st.text_area("Screening Questions & Answers (Optional)", height=150, key="conv_screening_qa", placeholder="Paste the screening questions and your answers here...")
             generate_initial = st.button("Generate Response", type="primary", key="generate_response")
 
     # --- Handle initial generation (creates a new session) ---
@@ -708,6 +808,7 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
             "job_description": job_description,
             "cover_letter": initial_proposal,
             "conversation": conversation_history,
+            "screening_qa": screening_qa or "",
             "chat_history": [],
         }
 
