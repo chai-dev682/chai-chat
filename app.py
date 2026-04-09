@@ -249,6 +249,8 @@ def init_session_state():
         st.session_state.conv_upload_key_counter = 0
     if "proposal_followup_history" not in st.session_state:
         st.session_state.proposal_followup_history = []
+    if "proposal_stage" not in st.session_state:
+        st.session_state.proposal_stage = None
 
 def on_nav_change():
     """
@@ -272,7 +274,8 @@ def on_nav_change():
     # Clear proposal follow-up state
     st.session_state.pop("proposal_followup_history", None)
     for key in ["last_proposal_text", "last_proposal_job_desc",
-                "last_screening_response", "last_screening_questions"]:
+                "last_screening_response", "last_screening_questions",
+                "proposal_stage"]:
         st.session_state.pop(key, None)
 
     # Conversation sessions persist across tab switches -- just clear the LLM messages
@@ -546,6 +549,7 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
             with cols[idx % len(cols)]:
                 st.image(img_file.read(), caption=img_file.name, use_container_width=True)
 
+    # --- Section A: Generate Proposal button ---
     if st.button("Generate Proposal", type="primary"):
         if not job_description:
             st.error("Please provide a job description")
@@ -562,18 +566,16 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
             if uploaded_images:
                 user_content.extend(_build_image_content(uploaded_images))
 
-            st.session_state.messages.append({"role": "user", "content": user_content})
+            st.session_state.messages = [{"role": "user", "content": user_content}]
 
-            with st.chat_message("assistant"):
-                response_text = ""
-                response_container = st.empty()
-                for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
-                    response_text += chunk
-                    response_container.write(response_text)
-                
-                _copy_button(response_text, "copy_proposal")
-                st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
+            response_text = ""
+            container = st.empty()
+            for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                response_text += chunk
+                container.write(response_text)
+            container.empty()
 
+            st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
             st.session_state.last_proposal_text = response_text
             st.session_state.last_proposal_job_desc = job_description
 
@@ -581,34 +583,40 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                 sq_prompt = get_prompt_template(PromptTemplate.UPWORK_SCREENING_QUESTIONS).format(screening_questions=screening_questions)
                 st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": sq_prompt}]})
 
-                with st.chat_message("assistant"):
-                    sq_response = ""
-                    sq_container = st.empty()
-                    for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
-                        sq_response += chunk
-                        sq_container.write(sq_response)
+                sq_response = ""
+                sq_container = st.empty()
+                for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                    sq_response += chunk
+                    sq_container.write(sq_response)
+                sq_container.empty()
 
-                    _copy_button(sq_response, "copy_screening")
-                    st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": sq_response}]})
-
+                st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": sq_response}]})
                 st.session_state.last_screening_response = sq_response
                 st.session_state.last_screening_questions = screening_questions
 
             st.session_state.proposal_followup_history = []
+            st.session_state.proposal_stage = "reviewing"
 
-    # --- Follow-up feedback section ---
-    has_proposal = st.session_state.messages and any(
-        m.get("role") == "assistant" for m in st.session_state.messages
-    )
-    if has_proposal:
+    # --- Section B: Always-visible proposal + screening display ---
+    if st.session_state.get("last_proposal_text"):
         st.divider()
-        st.markdown("##### Feedback & Follow-up")
+        st.markdown("##### Current Proposal")
+        with st.chat_message("assistant"):
+            st.markdown(st.session_state.last_proposal_text)
+            _copy_button(st.session_state.last_proposal_text, "copy_proposal_current")
 
-        for fi, fentry in enumerate(st.session_state.proposal_followup_history):
-            with st.chat_message(fentry["role"] if fentry["role"] == "assistant" else "user"):
-                st.markdown(fentry["text"])
-                if fentry["role"] == "assistant":
-                    _copy_button(fentry["text"], f"copy_proposal_fu_{fi}")
+        if st.session_state.get("last_screening_response"):
+            st.markdown("##### Screening Answers")
+            with st.chat_message("assistant"):
+                st.markdown(st.session_state.last_screening_response)
+                _copy_button(st.session_state.last_screening_response, "copy_screening_current")
+
+    # --- Section C & D: Feedback state machine ---
+    stage = st.session_state.get("proposal_stage")
+
+    if stage == "reviewing":
+        st.divider()
+        st.markdown("##### Feedback")
 
         feedback_type = st.radio(
             "How is the proposal?",
@@ -620,39 +628,99 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
         followup_msg = st.chat_input("Your feedback or follow-up question...")
         if followup_msg:
             if feedback_type == "Needs improvement":
-                user_prompt = f"The proposal needs improvement. Here is my feedback:\n{followup_msg}\n\nPlease regenerate or revise the proposal based on this feedback."
-            else:
-                user_prompt = followup_msg
+                # --- Bad: regenerate proposal ---
+                user_prompt = (
+                    "The proposal needs improvement. Here is my feedback:\n"
+                    f"{followup_msg}\n\n"
+                    "Please regenerate the full proposal based on this feedback."
+                )
+                st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": user_prompt}]})
 
-            st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": user_prompt}]})
-            st.session_state.proposal_followup_history.append({"role": "user", "text": followup_msg})
-
-            with st.chat_message("assistant"):
                 response_text = ""
-                response_container = st.empty()
+                container = st.empty()
                 for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
                     response_text += chunk
-                    response_container.write(response_text)
-                _copy_button(response_text, "copy_proposal_fu_live")
+                    container.write(response_text)
+                container.empty()
+
+                st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
+                st.session_state.last_proposal_text = response_text
+
+                # Also regenerate screening if applicable
+                stored_sq = st.session_state.get("last_screening_questions", "")
+                if stored_sq:
+                    sq_prompt = get_prompt_template(PromptTemplate.UPWORK_SCREENING_QUESTIONS).format(screening_questions=stored_sq)
+                    st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": sq_prompt}]})
+
+                    sq_response = ""
+                    sq_container = st.empty()
+                    for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                        sq_response += chunk
+                        sq_container.write(sq_response)
+                    sq_container.empty()
+
+                    st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": sq_response}]})
+                    st.session_state.last_screening_response = sq_response
+
+                st.session_state.proposal_followup_history = []
+                st.rerun()
+
+            else:
+                # --- Good: follow-up question ---
+                st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": followup_msg}]})
+                st.session_state.proposal_followup_history.append({"role": "user", "text": followup_msg})
+
+                response_text = ""
+                container = st.empty()
+                for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                    response_text += chunk
+                    container.write(response_text)
+                container.empty()
+
+                st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
+                st.session_state.proposal_followup_history.append({"role": "assistant", "text": response_text})
+                st.session_state.proposal_stage = "following_up"
+                st.rerun()
+
+    elif stage == "following_up":
+        st.divider()
+        st.markdown("##### Follow-up")
+
+        for fi, fentry in enumerate(st.session_state.proposal_followup_history):
+            with st.chat_message("assistant" if fentry["role"] == "assistant" else "user"):
+                st.markdown(fentry["text"])
+                if fentry["role"] == "assistant":
+                    _copy_button(fentry["text"], f"copy_proposal_fu_{fi}")
+
+        followup_msg = st.chat_input("Ask another follow-up question...")
+        if followup_msg:
+            st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": followup_msg}]})
+            st.session_state.proposal_followup_history.append({"role": "user", "text": followup_msg})
+
+            response_text = ""
+            container = st.empty()
+            for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                response_text += chunk
+                container.write(response_text)
+            container.empty()
 
             st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
             st.session_state.proposal_followup_history.append({"role": "assistant", "text": response_text})
             st.rerun()
 
-        # --- Move to Upwork Response button ---
-        if st.session_state.get("last_proposal_text"):
-            st.divider()
-            if st.button("Move to Upwork Response →", key="move_to_response"):
-                st.session_state.conv_job_description = st.session_state.get("last_proposal_job_desc", "")
-                st.session_state.initial_proposal = st.session_state.get("last_proposal_text", "")
-                st.session_state.conversation_history = ""
-                if st.session_state.get("last_screening_response"):
-                    st.session_state.conv_screening_qa = (
-                        f"Questions:\n{st.session_state.get('last_screening_questions', '')}\n\n"
-                        f"Answers:\n{st.session_state.get('last_screening_response', '')}"
-                    )
-                st.session_state.nav_selection = "💬 Upwork Response"
-                st.rerun()
+        # Move to Upwork Response button (only in following_up stage)
+        st.divider()
+        if st.button("Move to Upwork Response →", key="move_to_response"):
+            st.session_state.conv_job_description = st.session_state.get("last_proposal_job_desc", "")
+            st.session_state.initial_proposal = st.session_state.get("last_proposal_text", "")
+            st.session_state.conversation_history = ""
+            if st.session_state.get("last_screening_response"):
+                st.session_state.conv_screening_qa = (
+                    f"Questions:\n{st.session_state.get('last_screening_questions', '')}\n\n"
+                    f"Answers:\n{st.session_state.get('last_screening_response', '')}"
+                )
+            st.session_state._pending_tab_switch = "💬 Upwork Response"
+            st.rerun()
 
 
 def _build_conv_messages(context, new_client_content=None):
@@ -1011,6 +1079,10 @@ def main():
     init_session_state()
 
     st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>The Chai-Chat</i> 💬</h1>""")
+
+    # Handle pending tab switch (must happen before radio widget instantiates)
+    if "_pending_tab_switch" in st.session_state:
+        st.session_state.nav_selection = st.session_state.pop("_pending_tab_switch")
 
     # Navigation (replaces st.tabs to allow for state management on switch)
     # We use radio button with horizontal=True to mimic tabs
