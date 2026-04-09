@@ -666,8 +666,9 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                 st.rerun()
 
             else:
-                # --- Good: follow-up question ---
-                st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": followup_msg}]})
+                # --- Good: follow-up question (Q&A, not regeneration) ---
+                qa_prompt = f"The proposal above is approved. Now answer this follow-up question (do NOT regenerate the proposal):\n{followup_msg}"
+                st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": qa_prompt}]})
                 st.session_state.proposal_followup_history.append({"role": "user", "text": followup_msg})
 
                 response_text = ""
@@ -694,7 +695,8 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
 
         followup_msg = st.chat_input("Ask another follow-up question...")
         if followup_msg:
-            st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": followup_msg}]})
+            qa_prompt = f"The proposal above is approved. Now answer this follow-up question (do NOT regenerate the proposal):\n{followup_msg}"
+            st.session_state.messages.append({"role": "user", "content": [{"type": "text", "text": qa_prompt}]})
             st.session_state.proposal_followup_history.append({"role": "user", "text": followup_msg})
 
             response_text = ""
@@ -706,20 +708,6 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
 
             st.session_state.messages.append({"role": "assistant", "content": [{"type": "text", "text": response_text}]})
             st.session_state.proposal_followup_history.append({"role": "assistant", "text": response_text})
-            st.rerun()
-
-        # Move to Upwork Response button (only in following_up stage)
-        st.divider()
-        if st.button("Move to Upwork Response →", key="move_to_response"):
-            st.session_state.conv_job_description = st.session_state.get("last_proposal_job_desc", "")
-            st.session_state.initial_proposal = st.session_state.get("last_proposal_text", "")
-            st.session_state.conversation_history = ""
-            if st.session_state.get("last_screening_response"):
-                st.session_state.conv_screening_qa = (
-                    f"Questions:\n{st.session_state.get('last_screening_questions', '')}\n\n"
-                    f"Answers:\n{st.session_state.get('last_screening_response', '')}"
-                )
-            st.session_state._pending_tab_switch = "💬 Upwork Response"
             st.rerun()
 
 
@@ -853,16 +841,16 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
         st.markdown("##### New Conversation")
         job_description = st.text_area("Job Description *", height=150, key="conv_job_description", placeholder="Paste the original job description here...")
         initial_proposal = st.text_area("Initial Cover Letter/Proposal *", height=150, key="initial_proposal", placeholder="Paste your initial proposal or cover letter here...")
-        conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
         screening_qa = st.text_area("Screening Questions & Answers (Optional)", height=150, key="conv_screening_qa", placeholder="Paste the screening questions and your answers here...")
+        conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
         generate_initial = st.button("Generate Response", type="primary", key="generate_response")
     else:
         # Collapsed context when a session is active
         with st.expander("📋 Job Context"):
             job_description = st.text_area("Job Description *", height=150, key="conv_job_description", placeholder="Paste the original job description here...")
             initial_proposal = st.text_area("Initial Cover Letter/Proposal *", height=150, key="initial_proposal", placeholder="Paste your initial proposal or cover letter here...")
-            conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
             screening_qa = st.text_area("Screening Questions & Answers (Optional)", height=150, key="conv_screening_qa", placeholder="Paste the screening questions and your answers here...")
+            conversation_history = st.text_area("Conversation History *", height=200, key="conversation_history", placeholder="Paste the conversation between you and the client here...")
             generate_initial = st.button("Generate Response", type="primary", key="generate_response")
 
     # --- Handle initial generation (creates a new session) ---
