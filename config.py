@@ -34,6 +34,7 @@ class PromptTemplate(Enum):
     PROPOSAL = "proposal.txt"
     CONVERSATION_RESPONSE = "conversation_response.txt"
     SAVED_REPLY = "saved_reply.txt"
+    QUICK_REPLY = "quick_reply.txt"
     
 def get_prompt_template(prompt_template: PromptTemplate):
     with open(join(PROMPT_ROOT, prompt_template.value), "rt", encoding="utf-8") as f:

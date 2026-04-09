@@ -15,7 +15,7 @@ from src.conv_db import load_all_sessions, save_session, rename_session, delete_
 
 # --- Constants ---
 ANTHROPIC_MODELS = ["claude-opus-4-6"]
-GOOGLE_MODELS = ["gemini-3-pro-preview"]
+GOOGLE_MODELS = ["gemini-3.1-pro-preview"]
 OPENAI_MODELS = ["gpt-5.2"]
 
 # --- Helper Functions ---
@@ -38,7 +38,8 @@ def _copy_button(text, key):
     <script>
     const btn = document.getElementById('copybtn');
     btn.addEventListener('click', function() {{
-        const text = atob("{text_b64}");
+        const bytes = Uint8Array.from(atob("{text_b64}"), c => c.charCodeAt(0));
+        const text = new TextDecoder('utf-8').decode(bytes);
         const ta = document.createElement('textarea');
         ta.value = text;
         ta.style.position = 'fixed';
@@ -182,7 +183,7 @@ def init_session_state():
         st.session_state.prev_speech_hash = None
     if "nav_selection" not in st.session_state:
         st.session_state.nav_selection = "💬 2English"
-    # Conversation Response tab: multiple saved job sessions (loaded from SQLite)
+    # Upwork Response tab: multiple saved job sessions (loaded from SQLite)
     if "conv_sessions" not in st.session_state:
         st.session_state.conv_sessions = load_all_sessions()
     if "conv_active_id" not in st.session_state:
@@ -205,7 +206,7 @@ def on_nav_change():
     # We clear the volatile fields (Upwork, etc.) regardless of where we are going,
     # effectively resetting them.
     # The requirement "except tab_conversation" means we DON'T clear Conversation fields.
-    volatile_keys = ["upwork_job_description", "screening_questions"]
+    volatile_keys = ["upwork_job_description", "screening_questions", "qr_client_message", "qr_reply_context"]
     for key in volatile_keys:
         if key in st.session_state:
             del st.session_state[key]
@@ -491,13 +492,9 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                 important_points=important_points,
             )
 
-            # Build user message content: images first, then the text prompt
-            user_content = []
+            user_content = [{"type": "text", "text": prompt}]
             if uploaded_images:
                 user_content.extend(_build_image_content(uploaded_images))
-                # Add instruction so the LLM knows images are attached
-                prompt += "\n\n**Note:** The client attached images to this job post. Analyze them carefully and incorporate any relevant details into your proposal."
-            user_content.append({"type": "text", "text": prompt})
 
             st.session_state.messages.append({"role": "user", "content": user_content})
 
@@ -803,6 +800,67 @@ def render_conversation_response(api_keys, model_params, model_type, *args):
     with main_col:
         _render_conv_main_panel(api_keys, model_params, model_type)
 
+
+def render_quick_reply(api_keys, model_params, model_type, *args):
+    if not model_type:
+        st.warning("⬅️ Please introduce an API Key to continue...")
+        return
+
+    client_message = st.text_area(
+        "What the client said *",
+        height=180,
+        key="qr_client_message",
+        placeholder="Paste what the other person said here...",
+    )
+    reply_context = st.text_area(
+        "Your reply context / notes *",
+        height=180,
+        key="qr_reply_context",
+        placeholder="Describe what you want to say, key points, tone, etc...",
+    )
+
+    for msg_idx, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            for content in message["content"]:
+                if content["type"] == "text":
+                    st.write(content["text"])
+                    if message["role"] == "assistant":
+                        _copy_button(content["text"], f"copy_qr_{msg_idx}")
+
+    if st.button("Generate Reply", type="primary", key="qr_generate"):
+        if not client_message or not reply_context:
+            st.error("Please fill in both fields")
+            return
+
+        st.session_state.messages = []
+
+        prompt = get_prompt_template(PromptTemplate.QUICK_REPLY).format(
+            client_message=client_message,
+            reply_context=reply_context,
+        )
+
+        st.session_state.messages.append({
+            "role": "user",
+            "content": [{"type": "text", "text": prompt}],
+        })
+
+        with st.chat_message("assistant"):
+            response_text = ""
+            response_container = st.empty()
+            for chunk in stream_llm_response(
+                model_params, model_type, api_keys[model_type], st.session_state.messages
+            ):
+                response_text += chunk
+                response_container.write(response_text)
+
+            _copy_button(response_text, "copy_qr_live")
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": [{"type": "text", "text": response_text}],
+        })
+
+
 # --- Main ---
 
 def main():
@@ -816,7 +874,7 @@ def main():
     # We use radio button with horizontal=True to mimic tabs
     current_tab = st.radio(
         "Navigation",
-        ["💬 2English", "💼 Upwork Proposal", "💬 Conversation Response"],
+        ["💬 2English", "💼 Upwork Proposal", "💬 Upwork Response", "✉️ Conversation Reply"],
         horizontal=True,
         key="nav_selection",
         on_change=on_nav_change,
@@ -829,8 +887,10 @@ def main():
         render_2english(api_keys, model_params, model_type, audio_resp, tts_v, tts_m)
     elif current_tab == "💼 Upwork Proposal":
         render_upwork_proposal(api_keys, model_params, model_type)
-    elif current_tab == "💬 Conversation Response":
+    elif current_tab == "💬 Upwork Response":
         render_conversation_response(api_keys, model_params, model_type)
+    elif current_tab == "✉️ Conversation Reply":
+        render_quick_reply(api_keys, model_params, model_type)
 
 if __name__=="__main__":
     main()
