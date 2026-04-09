@@ -16,7 +16,43 @@ from src.conv_db import load_all_sessions, save_session, rename_session, delete_
 # --- Constants ---
 ANTHROPIC_MODELS = ["claude-opus-4-6"]
 GOOGLE_MODELS = ["gemini-3.1-pro-preview"]
-OPENAI_MODELS = ["gpt-5.2"]
+OPENAI_MODELS = ["gpt-5.4"]
+
+TONE_CATEGORIES = {
+    "casual": {
+        "label": "Friends / Casual",
+        "descriptors": "casual, relaxed, and friendly",
+        "instruction": "Write in a casual, relaxed tone. Use contractions freely, slang is okay. Sound like texting a friend.",
+    },
+    "close": {
+        "label": "Partner / Close",
+        "descriptors": "warm, intimate, and affectionate",
+        "instruction": "Write in a warm, affectionate tone. Be personal and caring. Keep it natural and loving without being cheesy.",
+    },
+    "professional": {
+        "label": "Professional / Client",
+        "descriptors": "professional, kind, and polished",
+        "instruction": "Write in a professional but kind tone. Be polite, clear, and helpful. Avoid being stiff or robotic.",
+    },
+    "formal": {
+        "label": "Formal / Business",
+        "descriptors": "formal, respectful, and business-appropriate",
+        "instruction": "Write in a formal, business-appropriate tone. Be respectful and structured. Use proper grammar, no contractions, and maintain professional distance.",
+    },
+}
+
+def _tone_selector(key_suffix):
+    """Render a tone/formality category selector. Returns the selected category dict."""
+    labels = [v["label"] for v in TONE_CATEGORIES.values()]
+    keys = list(TONE_CATEGORIES.keys())
+    selected_label = st.selectbox(
+        "Tone / Audience",
+        labels,
+        index=2,  # default to "Professional / Client"
+        key=f"tone_select_{key_suffix}",
+    )
+    selected_key = keys[labels.index(selected_label)]
+    return TONE_CATEGORIES[selected_key]
 
 # --- Helper Functions ---
 
@@ -132,7 +168,7 @@ def stream_llm_response(model_params, model_type, api_key, messages):
     if model_type == "openai":
         client = OpenAI(api_key=api_key, timeout=timeout)
         for chunk in client.chat.completions.create(
-            model=model_params.get("model", "gpt-5.2"),
+            model=model_params.get("model", "gpt-5.4"),
             messages=messages,
             temperature=model_params.get("temperature", 0.7),
             stream=True,
@@ -278,6 +314,8 @@ def render_2english(api_keys, model_params, model_type, audio_response, tts_voic
         st.warning("⬅️ Please introduce an API Key to continue...")
         return
 
+    tone = _tone_selector("2eng")
+
     # # Image/Video Upload Logic
     # if model_params["model"] in ["gpt-4.1", "gemini-3-pro-preview", "claude-opus-4-5-20251101"]:
     #     st.write(f"### **🖼️ Add an image{' or a video file' if model_type=='google' else ''}:**")
@@ -385,7 +423,7 @@ def render_2english(api_keys, model_params, model_type, audio_response, tts_voic
             # final_prompt = prompt or audio_prompt
         final_prompt = prompt
         # 1. Convert user prompt to sentences as if usa native english speakers write/say
-        system_instruction = "Rewrite the following text to sound natural, professional, and native-like (USA English), while preserving the original meaning."
+        system_instruction = f"Rewrite the following text to sound natural, {tone['descriptors']}, and native-like (USA English), while preserving the original meaning."
         full_text_prompt = f"{system_instruction}\n\nInput Text:\n{final_prompt}"
         
         st.session_state.messages.append({
@@ -419,7 +457,7 @@ def render_2english(api_keys, model_params, model_type, audio_response, tts_voic
                 for item in last_content:
                     if item["type"] == "text":
                         # Prepend instruction
-                         item["text"] = f"You are a native USA English speaker helper. Rewrite this to be native-like:\n\n{item['text']}"
+                         item["text"] = f"You are a native USA English speaker helper. Rewrite this to sound {tone['descriptors']} and native-like:\n\n{item['text']}"
             
             response_text = ""
             response_container = st.empty()
@@ -806,6 +844,8 @@ def render_quick_reply(api_keys, model_params, model_type, *args):
         st.warning("⬅️ Please introduce an API Key to continue...")
         return
 
+    tone = _tone_selector("qr")
+
     client_message = st.text_area(
         "What the client said *",
         height=180,
@@ -837,6 +877,7 @@ def render_quick_reply(api_keys, model_params, model_type, *args):
         prompt = get_prompt_template(PromptTemplate.QUICK_REPLY).format(
             client_message=client_message,
             reply_context=reply_context,
+            tone_instruction=tone["instruction"],
         )
 
         st.session_state.messages.append({
