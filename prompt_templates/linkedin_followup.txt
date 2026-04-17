@@ -1,0 +1,22 @@
+You are writing a LinkedIn outreach message to a client who posted a job on Upwork. You have already submitted a proposal on Upwork, and this LinkedIn message is a direct follow-up to express interest personally and stand out.
+
+# Writing Guidelines
+- Sound natural, warm, and professional — not salesy, not robotic.
+- Reference the specific job naturally. Extract the role (e.g., "Data Engineer", "React developer") and, if possible, the company or project name from the job description.
+- Mention that you've already submitted a proposal on Upwork.
+- Keep it short — 3 to 4 sentences max.
+- End with a soft call-to-action: propose a quick chat or phone call to discuss further.
+- Use the client's first name if it appears in the job description; otherwise use a warm opener like "Hi there" or "Hello".
+- Native American English speaker voice. Conversational, direct.
+
+# Example Style
+"Hi Jack, I came across your job posting looking for a Data Engineer for Rolli Shades today and felt my background would be a strong fit for the role, so I submitted my proposal on Upwork right away. I also wanted to reach out here on LinkedIn to express my interest directly. Would you be open to a quick chat or phone call this week to discuss the role further?"
+
+# Job Description
+{job_description}
+
+# My Upwork Proposal
+{proposal}
+
+# Task
+Write a LinkedIn outreach message following the guidelines above. Output ONLY the message — no preamble, no explanation, no quotes around it.

@@ -275,7 +275,7 @@ def on_nav_change():
     st.session_state.pop("proposal_followup_history", None)
     for key in ["last_proposal_text", "last_proposal_job_desc",
                 "last_screening_response", "last_screening_questions",
-                "proposal_stage"]:
+                "proposal_stage", "last_linkedin_message"]:
         st.session_state.pop(key, None)
 
     # Conversation sessions persist across tab switches -- just clear the LLM messages
@@ -530,6 +530,33 @@ def _build_image_content(uploaded_images):
         })
     return image_parts
 
+def _render_linkedin_followup_button(api_keys, model_params, model_type, key_suffix):
+    """Render the 'Generate LinkedIn Followup' button and display the last generated message."""
+    if st.button("🔗 Generate LinkedIn Followup", key=f"linkedin_btn_{key_suffix}"):
+        proposal = st.session_state.get("last_proposal_text", "")
+        job_desc = st.session_state.get("last_proposal_job_desc", "")
+        if proposal and job_desc:
+            prompt = get_prompt_template(PromptTemplate.LINKEDIN_FOLLOWUP).format(
+                job_description=job_desc,
+                proposal=proposal,
+            )
+            msg = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            response_text = ""
+            container = st.empty()
+            for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], msg):
+                response_text += chunk
+                container.write(response_text)
+            container.empty()
+            st.session_state.last_linkedin_message = response_text
+            st.rerun()
+
+    if st.session_state.get("last_linkedin_message"):
+        st.markdown("##### LinkedIn Followup Message")
+        with st.chat_message("assistant"):
+            st.markdown(st.session_state.last_linkedin_message)
+            _copy_button(st.session_state.last_linkedin_message, f"copy_linkedin_{key_suffix}")
+
+
 def render_upwork_proposal(api_keys, model_params, model_type, *args):
     job_description = st.text_area("Job Description *", height=200, key="upwork_job_description", placeholder="Paste the job description here...")
     screening_questions = st.text_area("Screening Questions (Optional)", height=150, key="screening_questions", placeholder="Paste any screening questions here...")
@@ -596,6 +623,7 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
 
             st.session_state.proposal_followup_history = []
             st.session_state.proposal_stage = "reviewing"
+            st.session_state.pop("last_linkedin_message", None)
 
     # --- Section B: Always-visible proposal + screening display ---
     if st.session_state.get("last_proposal_text"):
@@ -624,6 +652,9 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
             key="proposal_feedback_type",
             horizontal=True,
         )
+
+        if feedback_type == "Good - ask follow-up":
+            _render_linkedin_followup_button(api_keys, model_params, model_type, "reviewing")
 
         followup_msg = st.chat_input("Your feedback or follow-up question...")
         if followup_msg:
@@ -663,6 +694,7 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
                     st.session_state.last_screening_response = sq_response
 
                 st.session_state.proposal_followup_history = []
+                st.session_state.pop("last_linkedin_message", None)
                 st.rerun()
 
             else:
@@ -686,6 +718,8 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
     elif stage == "following_up":
         st.divider()
         st.markdown("##### Follow-up")
+
+        _render_linkedin_followup_button(api_keys, model_params, model_type, "following_up")
 
         for fi, fentry in enumerate(st.session_state.proposal_followup_history):
             with st.chat_message("assistant" if fentry["role"] == "assistant" else "user"):
@@ -915,6 +949,20 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
                     st.markdown(entry["text"])
                     _copy_button(entry["text"], f"copy_conv_{entry_idx}")
 
+        # Feedback radio: only show when the last entry is an assistant reply
+        last_is_assistant = (
+            active_session["chat_history"]
+            and active_session["chat_history"][-1]["role"] == "assistant"
+        )
+        feedback_type = "Good - next client message"
+        if last_is_assistant:
+            feedback_type = st.radio(
+                "How is the reply?",
+                ["Good - next client message", "Needs improvement"],
+                key="conv_feedback_type",
+                horizontal=True,
+            )
+
         # Image upload for follow-up messages (dynamic key to clear after each send)
         upload_key = f"conv_followup_images_{st.session_state.conv_upload_key_counter}"
         uploaded_images = st.file_uploader(
@@ -931,58 +979,92 @@ def _render_conv_main_panel(api_keys, model_params, model_type):
                 with preview_cols[idx % len(preview_cols)]:
                     st.image(img_file, caption=img_file.name, use_container_width=True)
 
-        # Follow-up input: paste client's latest message
-        client_msg = st.chat_input("Paste client's message to get a draft reply...")
-        if client_msg:
+        # Chat input: placeholder depends on feedback_type
+        if feedback_type == "Needs improvement":
+            placeholder = "Your feedback (to regenerate the reply)..."
+        else:
+            placeholder = "Paste client's message to get a draft reply..."
+        user_input = st.chat_input(placeholder)
+
+        if user_input:
             context = active_session["context"]
 
-            image_content_parts = []
-            image_urls_for_display = []
-            if uploaded_images:
-                image_content_parts = _build_image_content(uploaded_images)
-                image_urls_for_display = [p["image_url"]["url"] for p in image_content_parts]
+            if feedback_type == "Needs improvement":
+                # --- Regenerate last assistant reply based on feedback ---
+                feedback_prompt = (
+                    "Your previous draft reply needs improvement. Here is my feedback:\n"
+                    f"{user_input}\n\n"
+                    "Please regenerate your draft reply incorporating this feedback."
+                )
+                feedback_content = [{"type": "text", "text": feedback_prompt}]
+                api_messages = _build_conv_messages(context, new_client_content=feedback_content)
+                st.session_state.messages = api_messages
 
-            with st.chat_message("user"):
-                st.markdown(client_msg)
+                with st.chat_message("assistant"):
+                    response_text = ""
+                    response_container = st.empty()
+                    for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                        response_text += chunk
+                        response_container.write(response_text)
+                    _copy_button(response_text, "copy_conv_regen")
+
+                # Replace the last assistant entry with the revised one
+                active_session["chat_history"][-1] = {"role": "assistant", "text": response_text}
+                context["chat_history"][-1] = {"role": "assistant", "text": response_text}
+                sid = st.session_state.conv_active_id
+                save_session(sid, active_session["label"], context, active_session["chat_history"])
+
+                st.session_state.pop("conv_feedback_type", None)
+                st.rerun()
+            else:
+                # --- Good: new client message (normal turn) ---
+                image_content_parts = []
+                image_urls_for_display = []
+                if uploaded_images:
+                    image_content_parts = _build_image_content(uploaded_images)
+                    image_urls_for_display = [p["image_url"]["url"] for p in image_content_parts]
+
+                with st.chat_message("user"):
+                    st.markdown(user_input)
+                    if image_urls_for_display:
+                        img_cols = st.columns(min(len(image_urls_for_display), 4))
+                        for i, img_url in enumerate(image_urls_for_display):
+                            with img_cols[i % len(img_cols)]:
+                                st.image(img_url, use_container_width=True)
+
+                msg_text = user_input
+                if uploaded_images:
+                    msg_text += "\n\n(The client attached images above. Reference any relevant details in your response.)"
+
+                chat_display_entry = {"role": "client", "text": user_input}
                 if image_urls_for_display:
-                    img_cols = st.columns(min(len(image_urls_for_display), 4))
-                    for i, img_url in enumerate(image_urls_for_display):
-                        with img_cols[i % len(img_cols)]:
-                            st.image(img_url, use_container_width=True)
+                    chat_display_entry["images"] = image_urls_for_display
+                active_session["chat_history"].append(chat_display_entry)
 
-            msg_text = client_msg
-            if uploaded_images:
-                msg_text += "\n\n(The client attached images above. Reference any relevant details in your response.)"
+                context_entry = {"role": "client", "text": msg_text}
+                if image_content_parts:
+                    context_entry["image_parts"] = image_content_parts
+                context["chat_history"].append(context_entry)
 
-            chat_display_entry = {"role": "client", "text": client_msg}
-            if image_urls_for_display:
-                chat_display_entry["images"] = image_urls_for_display
-            active_session["chat_history"].append(chat_display_entry)
+                api_messages = _build_conv_messages(context)
+                st.session_state.messages = api_messages
 
-            context_entry = {"role": "client", "text": msg_text}
-            if image_content_parts:
-                context_entry["image_parts"] = image_content_parts
-            context["chat_history"].append(context_entry)
+                with st.chat_message("assistant"):
+                    response_text = ""
+                    response_container = st.empty()
+                    for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
+                        response_text += chunk
+                        response_container.write(response_text)
+                    _copy_button(response_text, "copy_conv_live")
 
-            api_messages = _build_conv_messages(context)
-            st.session_state.messages = api_messages
+                active_session["chat_history"].append({"role": "assistant", "text": response_text})
+                context["chat_history"].append({"role": "assistant", "text": response_text})
+                sid = st.session_state.conv_active_id
+                save_session(sid, active_session["label"], context, active_session["chat_history"])
 
-            with st.chat_message("assistant"):
-                response_text = ""
-                response_container = st.empty()
-                for chunk in stream_llm_response(model_params, model_type, api_keys[model_type], st.session_state.messages):
-                    response_text += chunk
-                    response_container.write(response_text)
-
-                _copy_button(response_text, "copy_conv_live")
-
-            active_session["chat_history"].append({"role": "assistant", "text": response_text})
-            context["chat_history"].append({"role": "assistant", "text": response_text})
-            sid = st.session_state.conv_active_id
-            save_session(sid, active_session["label"], context, active_session["chat_history"])
-
-            st.session_state.conv_upload_key_counter += 1
-            st.rerun()
+                st.session_state.conv_upload_key_counter += 1
+                st.session_state.pop("conv_feedback_type", None)
+                st.rerun()
 
 
 def render_conversation_response(api_keys, model_params, model_type, *args):
