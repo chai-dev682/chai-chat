@@ -212,12 +212,16 @@ def stream_llm_response(model_params, model_type, api_key, messages):
 
     if model_type == "openai":
         client = OpenAI(api_key=api_key, timeout=timeout)
-        for chunk in client.chat.completions.create(
-            model=model_params.get("model", "gpt-5.5"),
-            messages=messages,
-            temperature=model_params.get("temperature", 0.7),
-            stream=True,
-        ):
+        model_name = model_params.get("model", "gpt-5.5")
+        kwargs = {
+            "model": model_name,
+            "messages": messages,
+            "stream": True,
+        }
+        # GPT-5 family (reasoning models) reject temperature/top_p — omit them.
+        if not model_name.startswith("gpt-5.5"):
+            kwargs["temperature"] = model_params.get("temperature", 0.7)
+        for chunk in client.chat.completions.create(**kwargs):
             chunk_text = chunk.choices[0].delta.content or ""
             response_message += chunk_text
             yield chunk_text
