@@ -39,15 +39,20 @@ Do not just write a generic cover letter. You must analyze the specific context 
 **User's Strategic Focus (Priority):**
 {important_points}
 
-**Candidate Name:** Weston
 **Candidate Experience:**
 {experience}
+
+**Candidate Resume:**
+{resume}
 
 **Job Description:**
 {job_description}
 
 # Image Attachments
 If images are attached, they are screenshots or files the client included with the job post. Use visual details from those images (e.g. designs, error messages, architecture diagrams, UI mockups) to make your proposal more specific and relevant. Do NOT describe the images literally—use the information they contain to strengthen your pitch.
+
+# Resume Usage
+If the resume contains a section, project, or experience that is directly relevant to this job, weave a specific reference into the proposal naturally (e.g., a project name, a technology, a measurable outcome). Do NOT dump the resume — pick the single most relevant piece. If nothing in the resume is clearly relevant, ignore it.
 
 # Output
 Write the perfect proposal based on the analysis above. Do not output the analysis, just the proposal.

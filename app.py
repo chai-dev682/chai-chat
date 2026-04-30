@@ -15,9 +15,10 @@ from src.vectordb_utils import query_pinecone
 from src.conv_db import load_all_sessions, save_session, rename_session, delete_session
 
 # --- Constants ---
-ANTHROPIC_MODELS = ["claude-opus-4-6"]
+ANTHROPIC_MODELS = ["claude-opus-4-7", "claude-opus-4-6"]
 GOOGLE_MODELS = ["gemini-3.1-pro-preview"]
-OPENAI_MODELS = ["gpt-5.4"]
+OPENAI_MODELS = ["gpt-5.5"]
+RESUMES_DIR = "resumes"
 
 TONE_CATEGORIES = {
     "casual": {
@@ -41,6 +42,30 @@ TONE_CATEGORIES = {
         "instruction": "Write in a formal, business-appropriate tone. Be respectful and structured. Use proper grammar, no contractions, and maintain professional distance.",
     },
 }
+
+def _list_resumes():
+    """Return sorted list of resume filenames in RESUMES_DIR (.txt, .md)."""
+    if not os.path.isdir(RESUMES_DIR):
+        return []
+    return sorted(
+        f for f in os.listdir(RESUMES_DIR)
+        if f.lower().endswith((".txt", ".md"))
+        and f.lower() != "readme.md"
+        and not f.startswith(".")
+        and os.path.isfile(os.path.join(RESUMES_DIR, f))
+    )
+
+def _read_resume(filename):
+    """Read resume content from RESUMES_DIR. Returns empty string on error."""
+    if not filename:
+        return ""
+    path = os.path.join(RESUMES_DIR, filename)
+    try:
+        with open(path, "rt", encoding="utf-8") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
 
 def _tone_selector(key_suffix):
     """Render a tone/formality category selector. Returns the selected category dict."""
@@ -188,7 +213,7 @@ def stream_llm_response(model_params, model_type, api_key, messages):
     if model_type == "openai":
         client = OpenAI(api_key=api_key, timeout=timeout)
         for chunk in client.chat.completions.create(
-            model=model_params.get("model", "gpt-5.4"),
+            model=model_params.get("model", "gpt-5.5"),
             messages=messages,
             temperature=model_params.get("temperature", 0.7),
             stream=True,
@@ -316,6 +341,17 @@ def render_sidebar():
         
         with st.popover("⚙️ Model parameters"):
             model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1)
+
+        # Resume selector (used by Upwork Proposal tab)
+        resume_files = _list_resumes()
+        resume_options = ["(none)"] + resume_files
+        selected_resume = st.selectbox(
+            "📄 Resume (for proposals):",
+            resume_options,
+            index=0,
+            key="selected_resume",
+            help=f"Drop .txt or .md resume files in the '{RESUMES_DIR}/' folder. Selected resume is used as context when generating proposals.",
+        )
 
         audio_response = st.toggle("Audio response", value=False)
         tts_voice = "alloy"
@@ -583,10 +619,13 @@ def render_upwork_proposal(api_keys, model_params, model_type, *args):
             return
 
         with st.spinner("Generating proposal..."):
+            selected_resume = st.session_state.get("selected_resume", "(none)")
+            resume_text = _read_resume(selected_resume) if selected_resume and selected_resume != "(none)" else ""
             prompt = get_prompt_template(PromptTemplate.GENERATE).format(
                 experience=query_pinecone(job_description),
                 job_description=job_description,
                 important_points=important_points,
+                resume=resume_text or "(no resume provided)",
             )
 
             user_content = [{"type": "text", "text": prompt}]
