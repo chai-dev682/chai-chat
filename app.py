@@ -243,12 +243,16 @@ def stream_llm_response(model_params, model_type, api_key, messages):
 
     elif model_type == "anthropic":
         client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
-        with client.messages.stream(
-            model=model_params.get("model", "claude-opus-4-6"),
-            messages=messages_to_anthropic(messages),
-            temperature=model_params.get("temperature", 0.7),
-            max_tokens=4096,
-        ) as stream:
+        model_name = model_params.get("model", "claude-opus-4-6")
+        kwargs = {
+            "model": model_name,
+            "messages": messages_to_anthropic(messages),
+            "max_tokens": 4096,
+        }
+        # Claude Opus 4.7+ rejects temperature/top_p/top_k with 400 — omit them.
+        if not model_name.startswith("claude-opus-4-7"):
+            kwargs["temperature"] = model_params.get("temperature", 0.7)
+        with client.messages.stream(**kwargs) as stream:
             for text in stream.text_stream:
                 response_message += text
                 yield text
